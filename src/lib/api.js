@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 class ApiError extends Error {
   constructor(message, status, data = null) {
@@ -142,6 +142,41 @@ export const courseApi = {
   viewAllCourses: () => api.get("/courses/view"),
   viewCourseById: (courseId) => api.get(`/courses/view/${courseId}`),
   searchCourses: (query) => api.post("/courses/search", { query }),
+};
+
+// ── Coupon API ────────────────────────────────────────────────────────────────
+
+export const couponApi = {
+  // Admin only
+  createCoupon: (data) => api.post("/coupons/create", data),
+  getAllCoupons: () => api.get("/coupons/view"),
+  getCouponById: (id) => api.get(`/coupons/view/${id}`),
+  toggleCouponStatus: (id) => api.patch(`/coupons/toggle/${id}`),
+  deleteCoupon: (id) => api.delete(`/coupons/delete/${id}`),
+
+  // Student
+  applyCoupon: (data) => api.post("/coupons/apply", data),
+};
+
+// ── Enrollment API ───────────────────────────────────────────────────────────
+
+export const enrollmentApi = {
+  enrollFree: (data) => api.post("/enroll/free", data),
+  getMyCourses: () => api.get("/enroll/my-courses"),
+  getEnrollmentStatus: (courseId) => api.get(`/enroll/status/${courseId}`),
+  getEnrolledCourse: (courseId) => api.get(`/enroll/course/${courseId}`),
+};
+
+// ── Feedback API ──────────────────────────────────────────────────────────────
+
+export const feedbackApi = {
+  // Public
+  submitFeedback: (data) => api.post("/feedback/submit", data),
+
+  // Admin only
+  getAllFeedback: (query = "") => api.get(`/feedback/view${query}`),
+  getFeedbackById: (id) => api.get(`/feedback/view/${id}`),
+  deleteFeedback: (id) => api.delete(`/feedback/delete/${id}`),
 };
 
 // ── Health API ────────────────────────────────────────────────────────────────

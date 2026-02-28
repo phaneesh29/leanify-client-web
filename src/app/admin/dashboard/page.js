@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
-import { adminApi, courseApi, authApi } from "@/lib/api";
+import { adminApi, courseApi, authApi, couponApi, feedbackApi } from "@/lib/api";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -60,6 +60,31 @@ export default function AdminDashboardPage() {
   const [assignInstructorId, setAssignInstructorId] = useState("");
   const [assigningInstructor, setAssigningInstructor] = useState(false);
 
+  // Coupons
+  const [coupons, setCoupons] = useState([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(true);
+  const [showCouponModal, setShowCouponModal] = useState(false);
+  const [editingCoupon, setEditingCoupon] = useState(null);
+  const [couponForm, setCouponForm] = useState({
+    code: "", description: "", discount_percent: "", max_discount_amount: "",
+    min_order_amount: "0", max_uses: "1", max_uses_per_user: "1",
+    course_id: "", valid_from: "", valid_until: "",
+  });
+  const [submittingCoupon, setSubmittingCoupon] = useState(false);
+  const [togglingCouponId, setTogglingCouponId] = useState(null);
+  const [showCouponDetailModal, setShowCouponDetailModal] = useState(false);
+  const [couponDetail, setCouponDetail] = useState(null);
+  const [loadingCouponDetail, setLoadingCouponDetail] = useState(false);
+
+  // Feedback
+  const [feedbacks, setFeedbacks] = useState([]);
+  const [loadingFeedbacks, setLoadingFeedbacks] = useState(true);
+  const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState("");
+  const [showFeedbackDetailModal, setShowFeedbackDetailModal] = useState(false);
+  const [feedbackDetail, setFeedbackDetail] = useState(null);
+  const [loadingFeedbackDetail, setLoadingFeedbackDetail] = useState(false);
+  const [deletingFeedbackId, setDeletingFeedbackId] = useState(null);
+
   // Change password
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ old_password: "", new_password: "", confirm_password: "" });
@@ -111,14 +136,34 @@ export default function AdminDashboardPage() {
     return null;
   }, [toast]);
 
+  const fetchCoupons = useCallback(async () => {
+    try {
+      const res = await couponApi.getAllCoupons();
+      if (res.success) setCoupons(res.data || []);
+    } catch (err) { toast.error(err.message || "Failed to fetch coupons"); }
+    finally { setLoadingCoupons(false); }
+  }, [toast]);
+
+  const fetchFeedbacks = useCallback(async (category = "") => {
+    setLoadingFeedbacks(true);
+    try {
+      const query = category ? `?category=${category}` : "";
+      const res = await feedbackApi.getAllFeedback(query);
+      if (res.success) setFeedbacks(res.data || []);
+    } catch (err) { toast.error(err.message || "Failed to fetch feedback"); }
+    finally { setLoadingFeedbacks(false); }
+  }, [toast]);
+
   useEffect(() => {
     if (isAuthenticated && role === "admin") {
       fetchInstructors();
       fetchStudents();
       fetchCourses();
       fetchDeletedUsers();
+      fetchCoupons();
+      fetchFeedbacks();
     }
-  }, [isAuthenticated, role, fetchInstructors, fetchStudents, fetchCourses, fetchDeletedUsers]);
+  }, [isAuthenticated, role, fetchInstructors, fetchStudents, fetchCourses, fetchDeletedUsers, fetchCoupons, fetchFeedbacks]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -268,6 +313,99 @@ export default function AdminDashboardPage() {
     finally { setRegisteringAdmin(false); }
   };
 
+  // ── Coupon Handlers ───────────────────────────────────────────────────────
+
+  const handleCreateCoupon = () => {
+    setCouponForm({
+      code: "", description: "", discount_percent: "", max_discount_amount: "",
+      min_order_amount: "0", max_uses: "1", max_uses_per_user: "1",
+      course_id: "", valid_from: new Date().toISOString().split("T")[0], valid_until: "",
+    });
+    setEditingCoupon(null);
+    setShowCouponModal(true);
+  };
+
+  const handleSubmitCoupon = async (e) => {
+    e.preventDefault();
+    setSubmittingCoupon(true);
+    try {
+      const data = {
+        code: couponForm.code,
+        description: couponForm.description || undefined,
+        discount_percent: parseInt(couponForm.discount_percent),
+        max_discount_amount: couponForm.max_discount_amount ? parseInt(couponForm.max_discount_amount) : undefined,
+        min_order_amount: parseInt(couponForm.min_order_amount) || 0,
+        max_uses: parseInt(couponForm.max_uses) || 1,
+        max_uses_per_user: parseInt(couponForm.max_uses_per_user) || 1,
+        course_id: couponForm.course_id ? parseInt(couponForm.course_id) : undefined,
+        valid_from: new Date(couponForm.valid_from),
+        valid_until: new Date(couponForm.valid_until),
+      };
+      await couponApi.createCoupon(data);
+      toast.success("Coupon created successfully");
+      setShowCouponModal(false);
+      fetchCoupons();
+    } catch (err) { toast.error(err.message || "Failed to create coupon"); }
+    finally { setSubmittingCoupon(false); }
+  };
+
+  const handleToggleCoupon = async (id) => {
+    setTogglingCouponId(id);
+    try {
+      await couponApi.toggleCouponStatus(id);
+      toast.success("Coupon status toggled");
+      fetchCoupons();
+    } catch (err) { toast.error(err.message); }
+    finally { setTogglingCouponId(null); }
+  };
+
+  const handleDeleteCoupon = async (id) => {
+    if (!confirm("Delete this coupon?")) return;
+    try {
+      await couponApi.deleteCoupon(id);
+      toast.success("Coupon deleted");
+      fetchCoupons();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleViewCouponDetail = async (id) => {
+    setShowCouponDetailModal(true);
+    setLoadingCouponDetail(true);
+    try {
+      const res = await couponApi.getCouponById(id);
+      if (res.success) setCouponDetail(res.data);
+    } catch (err) { toast.error(err.message); setShowCouponDetailModal(false); }
+    finally { setLoadingCouponDetail(false); }
+  };
+
+  // ── Feedback Handlers ─────────────────────────────────────────────────────
+
+  const handleViewFeedback = async (id) => {
+    setShowFeedbackDetailModal(true);
+    setLoadingFeedbackDetail(true);
+    try {
+      const res = await feedbackApi.getFeedbackById(id);
+      if (res.success) {
+        setFeedbackDetail(res.data);
+        // Mark as read in local state
+        setFeedbacks((prev) => prev.map((f) => f.id === id ? { ...f, is_read: 1 } : f));
+      }
+    } catch (err) { toast.error(err.message); setShowFeedbackDetailModal(false); }
+    finally { setLoadingFeedbackDetail(false); }
+  };
+
+  const handleDeleteFeedback = async (id) => {
+    if (!confirm("Delete this feedback?")) return;
+    setDeletingFeedbackId(id);
+    try {
+      await feedbackApi.deleteFeedback(id);
+      toast.success("Feedback deleted");
+      setFeedbacks((prev) => prev.filter((f) => f.id !== id));
+      if (feedbackDetail?.id === id) setShowFeedbackDetailModal(false);
+    } catch (err) { toast.error(err.message); }
+    finally { setDeletingFeedbackId(null); }
+  };
+
   // ── Sections & Lessons Handlers ───────────────────────────────────────────
 
   // Refresh both courses list and content modal sections in a single API call
@@ -402,6 +540,8 @@ export default function AdminDashboardPage() {
     { key: "instructors", label: "Instructors", count: instructors.length },
     { key: "students", label: "Students", count: students.length },
     { key: "courses", label: "Courses", count: courses.length },
+    { key: "coupons", label: "Coupons", count: coupons.length },
+    { key: "feedback", label: "Feedback", count: feedbacks.length },
     { key: "deleted", label: "Deleted Users", count: deletedUsers.length },
     { key: "settings", label: "Settings" },
   ];
@@ -418,11 +558,10 @@ export default function AdminDashboardPage() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2.5 font-medium text-sm transition-colors border-b-2 whitespace-nowrap ${
-              activeTab === tab.key
+            className={`px-4 py-2.5 font-medium text-sm transition-colors border-b-2 whitespace-nowrap ${activeTab === tab.key
                 ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
                 : "border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
-            }`}
+              }`}
           >
             {tab.label}
             {tab.count !== undefined && (
@@ -555,11 +694,10 @@ export default function AdminDashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-lg font-semibold text-zinc-900 dark:text-white">{course.title}</h3>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          course.is_published
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${course.is_published
                             ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
                             : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
-                        }`}>
+                          }`}>
                           {course.is_published ? "Published" : "Draft"}
                         </span>
                       </div>
@@ -623,6 +761,149 @@ export default function AdminDashboardPage() {
                         Delete
                       </Button>
                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Coupons Tab ──────────────────────────────────────────────── */}
+      {activeTab === "coupons" && (
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">Coupon Management</h2>
+            <Button onClick={handleCreateCoupon}>Create Coupon</Button>
+          </div>
+          {loadingCoupons ? (
+            <LoadingSpinner />
+          ) : coupons.length === 0 ? (
+            <EmptyState message="No coupons found" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left">
+                    <th className="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">Code</th>
+                    <th className="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">Discount</th>
+                    <th className="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">Valid Until</th>
+                    <th className="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">Usage</th>
+                    <th className="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">Status</th>
+                    <th className="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {coupons.map((coupon) => {
+                    const isExpired = coupon.is_expired || new Date(coupon.valid_until) < new Date();
+                    const isFullyUsed = coupon.is_fully_used || coupon.used_count >= coupon.max_uses;
+                    return (
+                      <tr key={coupon.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                        <td className="px-6 py-4">
+                          <span className="font-mono font-semibold text-zinc-900 dark:text-white">{coupon.code}</span>
+                          {coupon.description && (
+                            <p className="text-xs text-zinc-400 mt-0.5 truncate max-w-[200px]">{coupon.description}</p>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="font-semibold text-indigo-600 dark:text-indigo-400">{coupon.discount_percent}%</span>
+                          {coupon.max_discount_amount && (
+                            <span className="text-xs text-zinc-400 ml-1">(max ₹{coupon.max_discount_amount})</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">
+                          {new Date(coupon.valid_until).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-zinc-900 dark:text-white">{coupon.used_count || 0}</span>
+                          <span className="text-zinc-400">/{coupon.max_uses}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${!coupon.is_active
+                              ? "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                              : isExpired
+                                ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                                : isFullyUsed
+                                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400"
+                                  : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                            }`}>
+                            {!coupon.is_active ? "Inactive" : isExpired ? "Expired" : isFullyUsed ? "Used Up" : "Active"}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => handleViewCouponDetail(coupon.id)}>View</Button>
+                            <Button variant="outline" size="sm" onClick={() => handleToggleCoupon(coupon.id)} loading={togglingCouponId === coupon.id}>
+                              {coupon.is_active ? "Deactivate" : "Activate"}
+                            </Button>
+                            <Button variant="danger" size="sm" onClick={() => handleDeleteCoupon(coupon.id)}>Delete</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Feedback Tab ──────────────────────────────────────────────── */}
+      {activeTab === "feedback" && (
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center flex-wrap gap-3">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">Feedback Management</h2>
+            <select
+              value={feedbackCategoryFilter}
+              onChange={(e) => { setFeedbackCategoryFilter(e.target.value); fetchFeedbacks(e.target.value); }}
+              className="px-3 py-1.5 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All Categories</option>
+              <option value="general">General</option>
+              <option value="course_content">Course Content</option>
+              <option value="platform_issue">Platform Issue</option>
+              <option value="instructor">Instructor</option>
+              <option value="suggestion">Suggestion</option>
+              <option value="complaint">Complaint</option>
+            </select>
+          </div>
+          {loadingFeedbacks ? (
+            <LoadingSpinner />
+          ) : feedbacks.length === 0 ? (
+            <EmptyState message="No feedback found" />
+          ) : (
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {feedbacks.map((fb) => (
+                <div key={fb.id} className="p-6 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleViewFeedback(fb.id)}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className={`font-semibold ${fb.is_read ? "text-zinc-600 dark:text-zinc-400" : "text-zinc-900 dark:text-white"}`}>
+                          {fb.subject}
+                        </h3>
+                        {!fb.is_read && (
+                          <span className="w-2 h-2 bg-indigo-500 rounded-full flex-shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400 truncate">{fb.message}</p>
+                      <div className="flex flex-wrap gap-3 mt-2 text-xs text-zinc-400">
+                        <span>{fb.name} ({fb.email})</span>
+                        <span className="capitalize px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded">{fb.category?.replace("_", " ")}</span>
+                        {fb.rating && (
+                          <span className="text-yellow-500">{'★'.repeat(fb.rating)}{'☆'.repeat(5 - fb.rating)}</span>
+                        )}
+                        <span>{new Date(fb.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => handleDeleteFeedback(fb.id)}
+                      loading={deletingFeedbackId === fb.id}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -941,6 +1222,127 @@ export default function AdminDashboardPage() {
           )}
         </Modal>
       )}
+      {/* ── Create Coupon Modal ──────────────────────────────────────── */}
+      {showCouponModal && (
+        <Modal onClose={() => setShowCouponModal(false)} title="Create Coupon">
+          <form onSubmit={handleSubmitCoupon} className="space-y-4">
+            <Input label="Coupon Code" required placeholder="e.g. SUMMER2026" value={couponForm.code}
+              onChange={(e) => setCouponForm({ ...couponForm, code: e.target.value.toUpperCase() })} disabled={submittingCoupon} />
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">Description (optional)</label>
+              <textarea value={couponForm.description} onChange={(e) => setCouponForm({ ...couponForm, description: e.target.value })} disabled={submittingCoupon} rows={2}
+                className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="Brief description" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Discount %" type="number" required min="1" max="100" value={couponForm.discount_percent}
+                onChange={(e) => setCouponForm({ ...couponForm, discount_percent: e.target.value })} disabled={submittingCoupon} />
+              <Input label="Max Discount (₹)" type="number" min="1" placeholder="Optional" value={couponForm.max_discount_amount}
+                onChange={(e) => setCouponForm({ ...couponForm, max_discount_amount: e.target.value })} disabled={submittingCoupon} />
+            </div>
+            <Input label="Min Order Amount (₹)" type="number" min="0" value={couponForm.min_order_amount}
+              onChange={(e) => setCouponForm({ ...couponForm, min_order_amount: e.target.value })} disabled={submittingCoupon} />
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Max Total Uses" type="number" required min="1" value={couponForm.max_uses}
+                onChange={(e) => setCouponForm({ ...couponForm, max_uses: e.target.value })} disabled={submittingCoupon} />
+              <Input label="Max Uses Per User" type="number" required min="1" value={couponForm.max_uses_per_user}
+                onChange={(e) => setCouponForm({ ...couponForm, max_uses_per_user: e.target.value })} disabled={submittingCoupon} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">Applicable Course (optional)</label>
+              <select
+                value={couponForm.course_id}
+                onChange={(e) => setCouponForm({ ...couponForm, course_id: e.target.value })}
+                className="w-full px-4 py-2.5 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                disabled={submittingCoupon}
+              >
+                <option value="">All courses</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Valid From" type="date" required value={couponForm.valid_from}
+                onChange={(e) => setCouponForm({ ...couponForm, valid_from: e.target.value })} disabled={submittingCoupon} />
+              <Input label="Valid Until" type="date" required value={couponForm.valid_until}
+                onChange={(e) => setCouponForm({ ...couponForm, valid_until: e.target.value })} disabled={submittingCoupon} />
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button type="button" variant="outline" onClick={() => setShowCouponModal(false)} disabled={submittingCoupon} className="flex-1">Cancel</Button>
+              <Button type="submit" loading={submittingCoupon} className="flex-1">Create Coupon</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ── Coupon Detail Modal ──────────────────────────────────────── */}
+      {showCouponDetailModal && (
+        <Modal onClose={() => setShowCouponDetailModal(false)} title="Coupon Details">
+          {loadingCouponDetail ? (
+            <LoadingSpinner />
+          ) : couponDetail ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-zinc-500 dark:text-zinc-400">Code</span><p className="font-mono font-semibold text-zinc-900 dark:text-white mt-0.5">{couponDetail.code}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Discount</span><p className="font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">{couponDetail.discount_percent}%</p></div>
+                {couponDetail.description && (
+                  <div className="col-span-2"><span className="text-zinc-500 dark:text-zinc-400">Description</span><p className="text-zinc-900 dark:text-white mt-0.5">{couponDetail.description}</p></div>
+                )}
+                <div><span className="text-zinc-500 dark:text-zinc-400">Max Discount</span><p className="text-zinc-900 dark:text-white mt-0.5">{couponDetail.max_discount_amount ? `₹${couponDetail.max_discount_amount}` : "No limit"}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Min Order</span><p className="text-zinc-900 dark:text-white mt-0.5">₹{couponDetail.min_order_amount || 0}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Usage</span><p className="text-zinc-900 dark:text-white mt-0.5">{couponDetail.used_count || 0} / {couponDetail.max_uses} (max {couponDetail.max_uses_per_user}/user)</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Status</span><p className={`font-medium mt-0.5 ${couponDetail.is_active ? "text-green-600" : "text-zinc-500"}`}>{couponDetail.is_active ? "Active" : "Inactive"} {couponDetail.is_expired ? " (Expired)" : ""}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Valid From</span><p className="text-zinc-900 dark:text-white mt-0.5">{new Date(couponDetail.valid_from).toLocaleDateString()}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Valid Until</span><p className="text-zinc-900 dark:text-white mt-0.5">{new Date(couponDetail.valid_until).toLocaleDateString()}</p></div>
+              </div>
+              {couponDetail.usage_history?.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-white mb-2">Usage History</h3>
+                  <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg divide-y divide-zinc-100 dark:divide-zinc-800 max-h-40 overflow-y-auto">
+                    {couponDetail.usage_history.map((u, i) => (
+                      <div key={i} className="px-4 py-2 text-xs flex justify-between text-zinc-600 dark:text-zinc-400">
+                        <span>{u.user_name || `User #${u.user_id}`}</span>
+                        <span>{new Date(u.used_at).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </Modal>
+      )}
+
+      {/* ── Feedback Detail Modal ─────────────────────────────────────── */}
+      {showFeedbackDetailModal && (
+        <Modal onClose={() => setShowFeedbackDetailModal(false)} title="Feedback Details">
+          {loadingFeedbackDetail ? (
+            <LoadingSpinner />
+          ) : feedbackDetail ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-zinc-500 dark:text-zinc-400">Name</span><p className="font-medium text-zinc-900 dark:text-white mt-0.5">{feedbackDetail.name}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Email</span><p className="text-zinc-900 dark:text-white mt-0.5">{feedbackDetail.email}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Category</span><p className="text-zinc-900 dark:text-white mt-0.5 capitalize">{feedbackDetail.category?.replace("_", " ")}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Rating</span><p className="text-yellow-500 mt-0.5">{feedbackDetail.rating ? '★'.repeat(feedbackDetail.rating) + '☆'.repeat(5 - feedbackDetail.rating) : "No rating"}</p></div>
+                <div><span className="text-zinc-500 dark:text-zinc-400">Date</span><p className="text-zinc-900 dark:text-white mt-0.5">{new Date(feedbackDetail.created_at).toLocaleString()}</p></div>
+              </div>
+              <div>
+                <span className="text-sm text-zinc-500 dark:text-zinc-400">Subject</span>
+                <p className="font-semibold text-zinc-900 dark:text-white mt-0.5">{feedbackDetail.subject}</p>
+              </div>
+              <div>
+                <span className="text-sm text-zinc-500 dark:text-zinc-400">Message</span>
+                <p className="text-zinc-800 dark:text-zinc-200 mt-1 whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4 text-sm">{feedbackDetail.message}</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button variant="danger" onClick={() => handleDeleteFeedback(feedbackDetail.id)} loading={deletingFeedbackId === feedbackDetail.id}>Delete Feedback</Button>
+              </div>
+            </div>
+          ) : null}
+        </Modal>
+      )}
+
     </DashboardLayout>
   );
 }
@@ -974,11 +1376,10 @@ function Avatar({ name }) {
 
 function StatusBadge({ verified, verifiedLabel, pendingLabel }) {
   return (
-    <span className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full ${
-      verified
+    <span className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full ${verified
         ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
         : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400"
-    }`}>
+      }`}>
       {verified ? verifiedLabel : pendingLabel}
     </span>
   );

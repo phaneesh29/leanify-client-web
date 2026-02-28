@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
-import { courseApi } from "@/lib/api";
+import { courseApi, couponApi, enrollmentApi } from "@/lib/api";
 import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
 
 /* ── Convert any YouTube URL to embed URL ───────────────────────────── */
 function toYouTubeEmbed(url) {
@@ -37,6 +38,16 @@ export default function CourseDetailPage() {
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Coupon
+  const [couponCode, setCouponCode] = useState("");
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
+  const [couponResult, setCouponResult] = useState(null);
+  const [couponError, setCouponError] = useState("");
+
+  // Enrollment
+  const [enrollmentStatus, setEnrollmentStatus] = useState(null); // null | { status, ... }
+  const [enrolling, setEnrolling] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     (async () => {
@@ -52,6 +63,17 @@ export default function CourseDetailPage() {
       }
     })();
   }, [id]);
+
+  // Check enrollment status on load
+  useEffect(() => {
+    if (!id || !isAuthenticated || role !== "student") return;
+    (async () => {
+      try {
+        const res = await enrollmentApi.getEnrollmentStatus(id);
+        if (res.success && res.data) setEnrollmentStatus(res.data);
+      } catch { /* not enrolled */ }
+    })();
+  }, [id, isAuthenticated, role]);
 
   const formatDate = (d) => {
     if (!d) return "—";
@@ -76,6 +98,43 @@ export default function CourseDetailPage() {
     else if (role === "instructor") router.push("/instructor/dashboard");
     else router.push("/dashboard");
   };
+
+  const handleApplyCoupon = async (e) => {
+    e.preventDefault();
+    if (!couponCode.trim()) return;
+    setApplyingCoupon(true);
+    setCouponError("");
+    setCouponResult(null);
+    try {
+      const res = await couponApi.applyCoupon({ code: couponCode, course_id: parseInt(id) });
+      if (res.success) {
+        setCouponResult(res.data);
+        toast.success(res.message || "Coupon applied!");
+      }
+    } catch (err) {
+      setCouponError(err.message || "Invalid coupon code");
+    } finally {
+      setApplyingCoupon(false);
+    }
+  };
+
+  const handleEnrollFree = async () => {
+    if (!couponResult || couponResult.requires_payment) return;
+    setEnrolling(true);
+    try {
+      const res = await enrollmentApi.enrollFree({ course_id: parseInt(id), coupon_code: couponCode });
+      if (res.success) {
+        toast.success(res.message || "Enrolled successfully!");
+        setEnrollmentStatus({ status: "enrolled" });
+      }
+    } catch (err) {
+      toast.error(err.message || "Enrollment failed");
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
+  const isEnrolled = enrollmentStatus?.status === "enrolled" || enrollmentStatus?.status === "completed";
 
   /* ── Loading ─────────────────────────────────────────────────────── */
   if (loading || authLoading) {
@@ -277,7 +336,53 @@ export default function CourseDetailPage() {
                     )}
                   </div>
 
-                  <Button className="w-full">Enroll Now</Button>
+                  {/* Coupon Apply (students only) */}
+                  {isAuthenticated && role === "student" && (
+                    <div className="mb-4">
+                      <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                        <Input
+                          placeholder="Coupon code"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          disabled={applyingCoupon}
+                          className="flex-1"
+                        />
+                        <Button type="submit" variant="outline" size="sm" loading={applyingCoupon} className="shrink-0">Apply</Button>
+                      </form>
+                      {couponError && <p className="text-xs text-red-500 mt-1">{couponError}</p>}
+                      {couponResult && (
+                        <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 space-y-1.5 text-sm">
+                          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+                            <span>Original</span><span>₹{couponResult.original_price}</span>
+                          </div>
+                          <div className="flex justify-between text-green-600 dark:text-green-400">
+                            <span>Discount ({couponResult.coupon_code})</span><span>-₹{couponResult.discount_amount}</span>
+                          </div>
+                          <div className="border-t border-green-200 dark:border-green-800 pt-1.5 flex justify-between font-semibold text-zinc-900 dark:text-white">
+                            <span>Final</span><span>₹{couponResult.final_price}</span>
+                          </div>
+                          {!couponResult.requires_payment && (
+                            <p className="text-green-600 dark:text-green-400 text-xs font-medium text-center pt-1">🎉 Free! No payment needed.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {isEnrolled ? (
+                    <Button className="w-full" onClick={() => router.push(`/courses/${id}/learn`)}>
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Go to Course
+                      </span>
+                    </Button>
+                  ) : couponResult && !couponResult.requires_payment ? (
+                    <Button className="w-full" onClick={handleEnrollFree} loading={enrolling}>
+                      🎉 Enroll Free
+                    </Button>
+                  ) : (
+                    <Button className="w-full">Enroll Now</Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -309,7 +414,52 @@ export default function CourseDetailPage() {
                 {course.sections?.length > 0 && <div>{course.sections.length} sections</div>}
               </div>
             </div>
-            <Button className="w-full">Enroll Now</Button>
+            {/* Mobile coupon */}
+            {isAuthenticated && role === "student" && (
+              <div className="mb-3">
+                <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                  <Input
+                    placeholder="Coupon code"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    disabled={applyingCoupon}
+                    className="flex-1"
+                  />
+                  <Button type="submit" variant="outline" size="sm" loading={applyingCoupon} className="shrink-0">Apply</Button>
+                </form>
+                {couponError && <p className="text-xs text-red-500 mt-1">{couponError}</p>}
+                {couponResult && (
+                  <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 space-y-1.5 text-sm">
+                    <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+                      <span>Original</span><span>₹{couponResult.original_price}</span>
+                    </div>
+                    <div className="flex justify-between text-green-600 dark:text-green-400">
+                      <span>Discount ({couponResult.coupon_code})</span><span>-₹{couponResult.discount_amount}</span>
+                    </div>
+                    <div className="border-t border-green-200 dark:border-green-800 pt-1.5 flex justify-between font-semibold text-zinc-900 dark:text-white">
+                      <span>Final</span><span>₹{couponResult.final_price}</span>
+                    </div>
+                    {!couponResult.requires_payment && (
+                      <p className="text-green-600 dark:text-green-400 text-xs font-medium text-center pt-1">🎉 Free! No payment needed.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {isEnrolled ? (
+              <Button className="w-full" onClick={() => router.push(`/courses/${id}/learn`)}>
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Go to Course
+                </span>
+              </Button>
+            ) : couponResult && !couponResult.requires_payment ? (
+              <Button className="w-full" onClick={handleEnrollFree} loading={enrolling}>
+                🎉 Enroll Free
+              </Button>
+            ) : (
+              <Button className="w-full">Enroll Now</Button>
+            )}
           </div>
         </div>
       </div>

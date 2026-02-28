@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,14 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
 export default function StudentVerifyPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950"><div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" /></div>}>
+      <StudentVerifyContent />
+    </Suspense>
+  );
+}
+
+function StudentVerifyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { verifyEmail } = useAuth();
@@ -22,7 +30,7 @@ export default function StudentVerifyPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!token.trim()) {
       setError("Verification token is required");
       return;
@@ -30,7 +38,7 @@ export default function StudentVerifyPage() {
 
     setLoading(true);
     setError("");
-    
+
     try {
       const response = await verifyEmail(token, "student");
       toast.success(response.message || "Email verified successfully!");

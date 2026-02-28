@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,14 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
 export default function InstructorVerifyPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950"><div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" /></div>}>
+      <InstructorVerifyContent />
+    </Suspense>
+  );
+}
+
+function InstructorVerifyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { verifyEmail } = useAuth();
@@ -22,7 +30,7 @@ export default function InstructorVerifyPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!token.trim()) {
       setError("Verification token is required");
       return;
@@ -30,7 +38,7 @@ export default function InstructorVerifyPage() {
 
     setLoading(true);
     setError("");
-    
+
     try {
       const response = await verifyEmail(token, "instructor");
       toast.success(response.message || "Email verified successfully!");
@@ -55,7 +63,7 @@ export default function InstructorVerifyPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          
+
           <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
             <p className="text-sm text-yellow-800 dark:text-yellow-300">
               <strong>Next step:</strong> Your account is pending admin approval. You&apos;ll receive an email once approved.

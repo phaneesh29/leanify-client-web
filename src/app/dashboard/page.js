@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
-import { courseApi } from "@/lib/api";
+import { courseApi, enrollmentApi } from "@/lib/api";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -17,6 +17,8 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
+  const [enrolledCourses, setEnrolledCourses] = useState([]);
+  const [loadingEnrolled, setLoadingEnrolled] = useState(true);
 
   // Profile editing
   const [editingProfile, setEditingProfile] = useState(false);
@@ -43,6 +45,21 @@ export default function DashboardPage() {
   useEffect(() => {
     if (isAuthenticated && role === "student") fetchCourses();
   }, [isAuthenticated, role, fetchCourses]);
+
+  const fetchEnrolledCourses = useCallback(async () => {
+    try {
+      const res = await enrollmentApi.getMyCourses();
+      if (res.success) setEnrolledCourses(res.data || []);
+    } catch (err) {
+      // silent — no enrolled courses
+    } finally {
+      setLoadingEnrolled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && role === "student") fetchEnrolledCourses();
+  }, [isAuthenticated, role, fetchEnrolledCourses]);
 
   useEffect(() => {
     if (user) {
@@ -81,7 +98,8 @@ export default function DashboardPage() {
 
   const tabs = [
     { key: "overview", label: "Overview" },
-    { key: "courses", label: "Courses", count: courses.length },
+    { key: "my-courses", label: "My Courses", count: enrolledCourses.length },
+    { key: "courses", label: "Browse", count: courses.length },
     { key: "profile", label: "Profile" },
   ];
 
@@ -97,11 +115,10 @@ export default function DashboardPage() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2.5 font-medium text-sm transition-colors border-b-2 whitespace-nowrap ${
-              activeTab === tab.key
-                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
-                : "border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-colors border-b-2 whitespace-nowrap ${activeTab === tab.key
+              ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+              : "border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+              }`}
           >
             {tab.label}
             {tab.count !== undefined && (
@@ -116,8 +133,8 @@ export default function DashboardPage() {
         <>
           <div className="grid md:grid-cols-3 gap-6 mb-8">
             <StatCard value={courses.length} label="Available Courses" color="blue" />
-            <StatCard value={0} label="Enrolled" color="green" />
-            <StatCard value="0h" label="Learning Time" color="purple" />
+            <StatCard value={enrolledCourses.length} label="Enrolled" color="green" />
+            <StatCard value={`${enrolledCourses.reduce((acc, c) => acc + (c.duration_hours || 0), 0)}h`} label="Learning Time" color="purple" />
           </div>
 
           {/* Quick Actions */}
@@ -142,6 +159,61 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
+          )}
+        </>
+      )}
+
+      {/* ── My Courses ─────────────────────────────────────────────────── */}
+      {activeTab === "my-courses" && (
+        <>
+          {loadingEnrolled ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent" />
+            </div>
+          ) : enrolledCourses.length > 0 ? (
+            <div className="space-y-4">
+              {enrolledCourses.map((ec) => (
+                <div
+                  key={ec.enrollment_id}
+                  className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-5 hover:border-indigo-500 transition-colors cursor-pointer"
+                  onClick={() => router.push(`/courses/${ec.course_id}/learn`)}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-zinc-900 dark:text-white text-lg mb-1">{ec.title}</h3>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400 line-clamp-1 mb-2">{ec.description}</p>
+                      <div className="flex flex-wrap gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+                        <span>{ec.duration_hours}h</span>
+                        <span>•</span>
+                        <span>Enrolled {new Date(ec.enrolled_at).toLocaleDateString()}</span>
+                        {ec.instructors?.length > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>{ec.instructors.map(i => `${i.first_name} ${i.last_name}`).join(", ")}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {ec.amount_paid === 0 && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">Free</span>
+                      )}
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${ec.enrollment_status === "enrolled"
+                        ? "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
+                        : ec.enrollment_status === "completed"
+                          ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                          : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        }`}>
+                        {ec.enrollment_status.charAt(0).toUpperCase() + ec.enrollment_status.slice(1)}
+                      </span>
+                      <svg className="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState message="You haven't enrolled in any courses yet. Browse courses to get started!" />
           )}
         </>
       )}

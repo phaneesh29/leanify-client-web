@@ -38,6 +38,12 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-3">
               <Link
+                href="/feedback"
+                className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white font-medium px-4 py-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
+              >
+                Feedback
+              </Link>
+              <Link
                 href="/auth/student/login"
                 className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white font-medium px-4 py-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
               >
@@ -78,9 +84,9 @@ export default function Home() {
                 Limits
               </span>
             </h1>
-            
+
             <p className="mt-8 text-xl text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto leading-relaxed">
-              Join thousands of learners and world-class instructors on Learnify. 
+              Join thousands of learners and world-class instructors on Learnify.
               Access high-quality courses and transform your career today.
             </p>
 
@@ -164,7 +170,7 @@ export default function Home() {
               Our platform provides all the tools and resources for effective learning
             </p>
           </div>
-          
+
           <div className="grid md:grid-cols-3 gap-8">
             <div className="group p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 transition-all hover:shadow-xl hover:shadow-indigo-500/10 hover:-translate-y-1">
               <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-indigo-500/25">
@@ -177,7 +183,7 @@ export default function Home() {
                 Access expert-crafted courses with comprehensive curriculum designed to help you master new skills effectively.
               </p>
             </div>
-            
+
             <div className="group p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 hover:border-green-500/50 dark:hover:border-green-500/50 transition-all hover:shadow-xl hover:shadow-green-500/10 hover:-translate-y-1">
               <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-green-500/25">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,7 +195,7 @@ export default function Home() {
                 Learn from vetted professionals and industry experts who are passionate about teaching and sharing knowledge.
               </p>
             </div>
-            
+
             <div className="group p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 hover:border-purple-500/50 dark:hover:border-purple-500/50 transition-all hover:shadow-xl hover:shadow-purple-500/10 hover:-translate-y-1">
               <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-violet-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-purple-500/25">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,12 +312,20 @@ export default function Home() {
               <p className="text-zinc-500 dark:text-zinc-400 text-sm">
                 © {new Date().getFullYear()} Learnify. All rights reserved.
               </p>
-              <Link
-                href="/auth/admin/login"
-                className="text-xs text-zinc-400 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-500 transition-colors"
-              >
-                Admin Access
-              </Link>
+              <div className="flex items-center gap-4">
+                <Link
+                  href="/feedback"
+                  className="text-xs text-zinc-400 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-500 transition-colors"
+                >
+                  Feedback
+                </Link>
+                <Link
+                  href="/auth/admin/login"
+                  className="text-xs text-zinc-400 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-500 transition-colors"
+                >
+                  Admin Access
+                </Link>
+              </div>
             </div>
           </div>
         </div>
