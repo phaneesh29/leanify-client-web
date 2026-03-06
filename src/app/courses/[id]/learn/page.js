@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
-import { enrollmentApi } from "@/lib/api";
+import { enrollmentApi, progressApi } from "@/lib/api";
 import Button from "@/components/ui/Button";
 
 /* ── Convert any YouTube URL to embed URL ───────────────────────────── */
@@ -58,6 +58,10 @@ export default function LearnPage() {
     const [expandedSections, setExpandedSections] = useState({});
     const [sidebarOpen, setSidebarOpen] = useState(true);
 
+    // Progress tracking
+    const [completedLessons, setCompletedLessons] = useState(new Set());
+    const [markingComplete, setMarkingComplete] = useState(false);
+
     useEffect(() => {
         if (authLoading) return;
         if (!isAuthenticated || role !== "student") {
@@ -79,6 +83,13 @@ export default function LearnPage() {
                     if (res.data.sections?.[0]?.lessons?.[0]) {
                         setActiveLesson(res.data.sections[0].lessons[0]);
                     }
+                    // Fetch progress
+                    try {
+                        const progressRes = await progressApi.getCourseProgress(id);
+                        if (progressRes.success) {
+                            setCompletedLessons(new Set(progressRes.data.completed_lesson_ids));
+                        }
+                    } catch { /* ignore progress fetch errors */ }
                 }
             } catch (err) {
                 if (err.status === 403) {
@@ -99,7 +110,32 @@ export default function LearnPage() {
         setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
     };
 
+    const toggleLessonComplete = async (lessonId) => {
+        if (markingComplete) return;
+        setMarkingComplete(true);
+        try {
+            const isCompleted = completedLessons.has(lessonId);
+            if (isCompleted) {
+                await progressApi.markIncomplete(lessonId);
+                setCompletedLessons(prev => {
+                    const next = new Set(prev);
+                    next.delete(lessonId);
+                    return next;
+                });
+            } else {
+                await progressApi.markComplete(lessonId);
+                setCompletedLessons(prev => new Set(prev).add(lessonId));
+            }
+        } catch (err) {
+            toast.error(err.message || "Failed to update progress");
+        } finally {
+            setMarkingComplete(false);
+        }
+    };
+
     const totalLessons = course?.sections?.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || 0;
+    const completedCount = completedLessons.size;
+    const progressPercent = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
 
     /* ── Loading ─────────────────────────────────────────────────────── */
     if (loading || authLoading) {
@@ -251,6 +287,33 @@ export default function LearnPage() {
                                 </div>
                                 <h2 className="text-2xl font-bold text-zinc-900 dark:text-white mb-4">{activeLesson.title}</h2>
 
+                                {/* Mark Complete Button */}
+                                <button
+                                    onClick={() => toggleLessonComplete(activeLesson.id)}
+                                    disabled={markingComplete}
+                                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors mb-6 ${
+                                        completedLessons.has(activeLesson.id)
+                                            ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/50"
+                                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                                    }`}
+                                >
+                                    {completedLessons.has(activeLesson.id) ? (
+                                        <>
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                            Completed
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <circle cx="12" cy="12" r="10" strokeWidth={2} />
+                                            </svg>
+                                            Mark as Complete
+                                        </>
+                                    )}
+                                </button>
+
                                 {/* Quiz */}
                                 {activeLesson.content_type === "quiz" && (
                                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 text-center">
@@ -298,10 +361,22 @@ export default function LearnPage() {
                 >
                     {/* Sidebar header */}
                     <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-zinc-900 z-10">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between mb-2">
                             <h2 className="font-semibold text-zinc-900 dark:text-white text-sm">Course Content</h2>
                             <span className="text-xs text-zinc-500 dark:text-zinc-400">
                                 {course.sections?.length} sections • {totalLessons} lessons
+                            </span>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="flex items-center gap-2">
+                            <div className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                <div 
+                                    className="h-full bg-emerald-500 transition-all duration-300"
+                                    style={{ width: `${progressPercent}%` }}
+                                />
+                            </div>
+                            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+                                {completedCount}/{totalLessons} ({progressPercent}%)
                             </span>
                         </div>
                     </div>
@@ -332,27 +407,49 @@ export default function LearnPage() {
 
                                 {/* Lessons list */}
                                 {expandedSections[section.id] && section.lessons?.map((lesson) => (
-                                    <button
+                                    <div
                                         key={lesson.id}
-                                        onClick={() => { setActiveLesson(lesson); setSidebarOpen(false); }}
-                                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-zinc-100 dark:border-zinc-800/50 ${activeLesson?.id === lesson.id
+                                        className={`flex items-center gap-2 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800/50 ${activeLesson?.id === lesson.id
                                             ? "bg-indigo-50 dark:bg-indigo-900/20 border-l-2 border-l-indigo-600"
                                             : "hover:bg-zinc-50 dark:hover:bg-zinc-800/30"
                                             }`}
                                     >
-                                        <ContentIcon type={lesson.content_type} />
-                                        <div className="flex-1 min-w-0">
-                                            <p className={`text-sm truncate ${activeLesson?.id === lesson.id
-                                                ? "font-semibold text-indigo-700 dark:text-indigo-400"
-                                                : "text-zinc-700 dark:text-zinc-300"
-                                                }`}>
-                                                {lesson.title}
-                                            </p>
-                                            {lesson.duration_minutes && (
-                                                <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{lesson.duration_minutes} min</p>
+                                        {/* Completion checkbox */}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); toggleLessonComplete(lesson.id); }}
+                                            disabled={markingComplete}
+                                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                                                completedLessons.has(lesson.id)
+                                                    ? "bg-emerald-500 border-emerald-500 text-white"
+                                                    : "border-zinc-300 dark:border-zinc-600 hover:border-emerald-400"
+                                            }`}
+                                        >
+                                            {completedLessons.has(lesson.id) && (
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                </svg>
                                             )}
-                                        </div>
-                                    </button>
+                                        </button>
+                                        <button
+                                            onClick={() => { setActiveLesson(lesson); setSidebarOpen(false); }}
+                                            className="flex-1 flex items-center gap-3 text-left min-w-0"
+                                        >
+                                            <ContentIcon type={lesson.content_type} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`text-sm truncate ${activeLesson?.id === lesson.id
+                                                    ? "font-semibold text-indigo-700 dark:text-indigo-400"
+                                                    : completedLessons.has(lesson.id)
+                                                        ? "text-zinc-500 dark:text-zinc-400 line-through"
+                                                        : "text-zinc-700 dark:text-zinc-300"
+                                                    }`}>
+                                                    {lesson.title}
+                                                </p>
+                                                {lesson.duration_minutes && (
+                                                    <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{lesson.duration_minutes} min</p>
+                                                )}
+                                            </div>
+                                        </button>
+                                    </div>
                                 ))}
                             </div>
                         ))}

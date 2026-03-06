@@ -167,6 +167,14 @@ export const enrollmentApi = {
   getEnrolledCourse: (courseId) => api.get(`/enroll/course/${courseId}`),
 };
 
+// ── Progress API ─────────────────────────────────────────────────────────────
+
+export const progressApi = {
+  markComplete: (lessonId) => api.post(`/progress/complete/${lessonId}`),
+  markIncomplete: (lessonId) => api.post(`/progress/incomplete/${lessonId}`),
+  getCourseProgress: (courseId) => api.get(`/progress/course/${courseId}`),
+};
+
 // ── Feedback API ──────────────────────────────────────────────────────────────
 
 export const feedbackApi = {
